@@ -1,4 +1,5 @@
-const { makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
+const { makeWASocket, useMultiFileAuthState, DisconnectReason, downloadMediaMessage } = require('@whiskeysockets/baileys');
+const cloudinary = require('./utils/cloudinaryConfig');
 
 const userStates = {};  // This will store the state of each user and their form responses
 
@@ -29,17 +30,20 @@ const startSock = async () => {
 
         if (!msg.key.fromMe && msg.key.remoteJid.includes('@s.whatsapp.net') && msg.message) {
             const userId = msg.key.remoteJid;
-            const userInput = msg.message.conversation.trim(); // User input
-            const userState = userStates[userId] || { currentMenu: 'mainMenu', formData: {} };  // Get user's state, or set to mainMenu
+            const userInput = msg.message.extendedTextMessage?.text?.trim() || msg.message?.conversation;
+            const userState = userStates[userId] || { currentMenu: 'initial', formData: {} };  // Get user's state, or set to mainMenu
+            const userInputImage = msg.message?.imageMessage; // User input image
 
             console.log('Message:', JSON.stringify(msg, null, 2));
             console.log('User input:', userInput);
 
             switch (userState.currentMenu) {
+                case 'initial':
+                    await handleInitialMenu(sock, userId, userState);
+                    break;
                 case 'mainMenu':
                     await handleMainMenu(sock, userId, userInput, userState);
                     break;
-
                 case 'donationMenu':
                     await handleDonationMenu(sock, userId, userInput, userState);
                     break;
@@ -47,7 +51,10 @@ const startSock = async () => {
                 case 'fillForm':
                     await handleFormFilling(sock, userId, userInput, userState);
                     break;
-
+                case 'sendConfirmation':
+                    // give function to handle image input
+                    await handleImageInput(sock, userId, userInputImage, userState);
+                    break;
                 default:
                     await sock.sendMessage(userId, { text: 'Invalid menu state, resetting.' });
                     userState.currentMenu = 'mainMenu';
@@ -61,6 +68,13 @@ const startSock = async () => {
         return;
     });
 };
+
+const handleInitialMenu = async (sock, userId, userState) => {
+    await sock.sendMessage(userId, {
+        text: 'Selamat datang di menu utama. Pilih opsi:\n1. Profil Pusbatara\n2. Update Progress Pusbatara Terkini\n3. Ingin Berdonasi\n4. Konfirmasi Transfer\n5. Cek Outstanding/Riwayat Cicilan\n6. Live Chat Admin'
+    });
+    userState.currentMenu = 'mainMenu';
+}
 
 // Handle main menu logic
 const handleMainMenu = async (sock, userId, input, userState) => {
@@ -83,8 +97,26 @@ const handleMainMenu = async (sock, userId, input, userState) => {
             });
             userState.currentMenu = 'donationMenu';  // Move to donation menu
             break;
+        case '4':
+            await sock.sendMessage(userId, {
+                text: 'Konfirmasi transfer ke rekening BCA 1234567890 atas nama Pusbatara. Unggah gambar bukti transfer yang telah dilakukan.'
+            });
+            userState.currentMenu = 'sendConfirmation';  // Move to send confirmation menu
+            break;
+        case '5':
+            await sock.sendMessage(userId, {
+                text: 'Cek outstanding/cicilan dengan nomor HP yang terdaftar.'
+            });
+            await sendMainMenu(sock, userId);
+            break;
+        case '6':
+            await sock.sendMessage(userId, {
+                text: 'Live chat dengan admin Pusbatara. Silahkan mengetik pesan anda.'
+            });
+            await sendMainMenu(sock, userId);
+            break;
         default:
-            await sock.sendMessage(userId, { text: 'Invalid option. Please choose again.' });
+            await sock.sendMessage(userId, { text: 'Pilihan tidak tersedia. Harap masukkan pilihan yang tersedia!' });
             await sendMainMenu(sock, userId);
             break;
     }
@@ -127,7 +159,7 @@ const handleDonationMenu = async (sock, userId, input, userState) => {
     userState.formData.package = selectedPackageName;
 
     await sock.sendMessage(userId, {
-        text: 'Please provide your details in the following format:\n\nName: <Your Name>\nState: <Your State>\nCity: <Your City>'
+        text: 'Isilah data diri anda menggunakan format berikut. Dapat disalin saja dan isi sesuai kolom yang dibutuhkan:\n\nName: <Your Name>\nState: <Your State>\nCity: <Your City>'
     });
 };
 
@@ -146,8 +178,8 @@ const handleFormFilling = async (sock, userId, input, userState) => {
 
         // Form is complete, send a summary
         await sock.sendMessage(userId, {
-            text: `Thank you ${formData.name} from ${formData.city}, ${formData.state} for selecting the ${formData.package} package!`
-        });
+            text: `Terima kasih ${formData.name} atas donasi yang telah dilakukan\n\nAnda dapat melakukan transfer ke rekening BCA 1234567890 atas nama Pusbatara. Kemudian sertakan bukti transfer pada menu ke-4 (Konfirmasi Transfer).`
+        })
 
         // Reset user state to main menu after form completion
         userState.currentMenu = 'mainMenu';
@@ -156,7 +188,22 @@ const handleFormFilling = async (sock, userId, input, userState) => {
     } else {
         // If the format is incorrect, prompt the user again
         await sock.sendMessage(userId, {
-            text: 'Invalid format. Please provide your details in the correct format:\n\nName: <Your Name>\nState: <Your State>\nCity: <Your City>'
+            text: 'Format data diri tidak tepat. Harap inputkan data diri sesuai dengan format yang diberikan:\n\nName: <Your Name>\nState: <Your State>\nCity: <Your City>'
+        });
+    }
+};
+
+// Handle image input for transfer confirmation
+const handleImageInput = async (sock, userId, input, userState) => {
+    // Handle image input here
+    if (input) {
+        const imageBuffer = await downloadMediaMessage(input);
+        const image = await cloudinary.uploader
+            .upload(imageBuffer, {
+                folder: 'pusbatara'
+            });
+        await sock.sendMessage(userId, {
+            text: `Terima kasih atas konfirmasi transfer. Bukti transfer anda: ${image.secure_url}`
         });
     }
 };
