@@ -8,7 +8,7 @@ const packageSchema = new Schema({
         required: true
     },
     goal_amount: {
-        type: Double,
+        type: Number,
         required: true
     }
 });

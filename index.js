@@ -1,9 +1,21 @@
 const { makeWASocket, useMultiFileAuthState, DisconnectReason, downloadMediaMessage } = require('@whiskeysockets/baileys');
 const mongoose = require('mongoose');
-const dotenv = require('dotenv').config();
 const cloudinary = require('./utils/cloudinary');
+const express = require('express');
+const cors = require('cors');
+
+require('dotenv').config();
 
 const userStates = {};  // This will store the state of each user and their form responses
+
+const app = express();
+app.use(cors());
+
+app.use(express.json());
+
+// Routes
+const donatorRoutes = require('./routes/donatorRoutes');
+const packageRoutes = require('./routes/packageRoutes');
 
 const startSock = async () => {
     const { state, saveCreds } = await useMultiFileAuthState('./auth_info');
@@ -343,7 +355,12 @@ mongoose
     .connect(
         process.env.MONGO_URI
     ).then(result => {
-        console.log('Connected to MongoDB' + result.connection.db.databaseName);
+        console.log('Connected to MongoDB ' + result.connection.db.databaseName);
+        app.listen(8080);
     }).catch(err => {
         console.log(err);
-    }); 
+    });
+
+
+app.use('/donators', donatorRoutes);
+app.use('/packages', packageRoutes);
