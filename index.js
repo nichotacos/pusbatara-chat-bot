@@ -30,7 +30,7 @@ const startSock = async () => {
     sock.ev.on('messages.upsert', async (m) => {
         const msg = m.messages[0];
 
-        if (!msg.key.fromMe && msg.key.remoteJid.includes('@s.whatsapp.net') && msg.message && (!msg.key.remoteJid.includes('6288224127612') || !msg.key.remoteJid.includes('6287778500955'))) {
+        if (!msg.key.fromMe && msg.key.remoteJid.includes('@s.whatsapp.net') && msg.message) {
             const userId = msg.key.remoteJid;
             const userInput = msg.message.extendedTextMessage?.text?.trim() || msg.message?.conversation;
             const userState = userStates[userId] || { currentMenu: 'initial', formData: {}, step: 0 };  // Get user's state, or set to mainMenu
@@ -337,13 +337,13 @@ const sendMainMenu = async (sock, userId) => {
 };
 
 // Start the socket connection
-startSock();
+// startSock();
 
 mongoose
     .connect(
         process.env.MONGO_URI
     ).then(result => {
-        console.log('Connected to MongoDB' + result);
+        console.log('Connected to MongoDB' + result.connection.db.databaseName);
     }).catch(err => {
         console.log(err);
-    });
+    }); 
