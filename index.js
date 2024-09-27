@@ -3,6 +3,9 @@ const mongoose = require('mongoose');
 const cloudinary = require('./utils/cloudinary');
 const express = require('express');
 const cors = require('cors');
+const bodyParser = require('body-parser');
+const { Readable } = require('stream');
+const axios = require('axios');
 
 require('dotenv').config();
 
@@ -16,6 +19,12 @@ app.use(express.json());
 // Routes
 const donatorRoutes = require('./routes/donatorRoutes');
 const packageRoutes = require('./routes/packageRoutes');
+const transactionRoutes = require('./routes/transactionRoutes');
+const donationRoutes = require('./routes/donationRoutes');
+const installmentRoutes = require('./routes/installmentRoutes');
+
+app.use(bodyParser.json());
+app.use(express.urlencoded({ extended: true }));
 
 const startSock = async () => {
     const { state, saveCreds } = await useMultiFileAuthState('./auth_info');
@@ -108,7 +117,7 @@ const tesSwitch = async (sock, userId, userInput, userState) => {
 
 const handleInitialMenu = async (sock, userId, userState) => {
     await sock.sendMessage(userId, {
-        text: 'Selamat datang di menu utama. Pilih opsi:\n1. Profil Pusbatara\n2. Update Progress Pusbatara Terkini\n3. Ingin Berdonasi\n4. Konfirmasi Transfer\n5. Cek Outstanding/Riwayat Cicilan\n6. Live Chat Admin'
+        text: '*Selamat datang di Sistem DONASI PUSBATARA*, Silahkan pilih menu:\n1. Profil Pusbatara\n2. Update Progress Pusbatara Terkini\n3. Ingin Berdonasi\n4. Konfirmasi Transfer\n5. Cek Outstanding/Riwayat Cicilan\n6. Live Chat Admin'
     });
     userState.currentMenu = 'mainMenu';
 }
@@ -128,13 +137,13 @@ const handleMainMenu = async (sock, userId, input, userState) => {
     switch (input) {
         case '1':
             await sock.sendMessage(userId, {
-                text: ' Latar Belakang, Visi, Misi, Tujuan, Nilai, dll. Link ke akun IG Pusbatara, Website, dll.'
+                text: 'Latar Belakang, Visi, Misi, Tujuan, Nilai, dll. Link ke akun IG Pusbatara, Website, dll.\n\nLebih lanjut dapat dilihat pada laman: https://pusbatara.org/#tentang_kami'
             });
             await sendMainMenu(sock, userId);
             break;
         case '2':
             await sock.sendMessage(userId, {
-                text: 'Rekap progress (textual) disertai link ke IG Pusbatara atau link YouTube'
+                text: 'Rekap progress (textual) disertai link ke IG Pusbatara atau link YouTube.\n\nLebih lanjut dapat dilihat pada halaman instagram kami: https://www.instagram.com/pusbatara/'
             });
             await sendMainMenu(sock, userId);
             break;
@@ -214,7 +223,11 @@ const handleDonationMenu = async (sock, userId, input, userState) => {
 
     if (input === '4') {
         await sock.sendMessage(userId, {
-            text: 'Isilah data diri anda menggunakan format berikut. Dapat disalin saja dan isi sesuai kolom yang dibutuhkan. Pastikan data yang anda isi benar:\n\nNama: \nProvinsi: \nKota: '
+            text: 'Isilah data diri anda menggunakan format berikut. Dapat disalin saja dan isi sesuai kolom yang dibutuhkan. Pastikan data yang anda isi benar.'
+        });
+
+        await sock.sendMessage(userId, {
+            text: 'Nama: \nProvinsi: \nKota: '
         });
     } else {
         if (input === '3') {
@@ -237,7 +250,7 @@ const handleInstallmentType = async (sock, userId, input, userState) => {
     let installmentType;
 
     // /Tumbler|Bor Pile/
-    if (userState.formData.package.includes(['Tumbler', 'Bor Pile'])) {
+    if (userState.formData.package === 'Tumbler' || userState.formData.package === 'Bor Pile') {
         if (input === '1') {
             installmentType = 'Sekali Bayar';
             downStep(userState);
@@ -271,6 +284,14 @@ const handleInstallmentType = async (sock, userId, input, userState) => {
         text: `Anda memilih tipe donasi ${userState.formData.package} dengan pembayaran ${installmentType}. Terima kasih atas donasi yang telah diberikan.`
     });
 
+    await sock.sendMessage(userId, {
+        text: 'Isilah data diri anda menggunakan format berikut. Dapat disalin saja dan isi sesuai kolom yang dibutuhkan. Pastikan data yang anda isi benar.'
+    });
+
+    await sock.sendMessage(userId, {
+        text: 'Nama: \nProvinsi: \nKota: '
+    });
+
     // After selecting package, ask user for form input (Name, State, City)
     userState.currentMenu = 'fillForm';
     userState.formData.installmentType = installmentType;
@@ -288,11 +309,68 @@ const handleFormFilling = async (sock, userId, input, userState) => {
         formData.name = match.groups.name.trim();
         formData.state = match.groups.state.trim();
         formData.city = match.groups.city.trim();
+        formData.phone = userId.split('@')[0];
 
         // Form is complete, send a summary
         await sock.sendMessage(userId, {
             text: `Terima kasih ${formData.name} atas donasi yang telah dilakukan\n\nAnda dapat melakukan transfer ke rekening BCA 1234567890 atas nama Pusbatara. Kemudian sertakan bukti transfer pada menu ke-4 (Konfirmasi Transfer).`
-        })
+        });
+
+        const urlEncodeDonatorData = new URLSearchParams();
+        urlEncodeDonatorData.append('name', formData.name);
+        urlEncodeDonatorData.append('phone', formData.phone);
+        urlEncodeDonatorData.append('province', formData.state);
+        urlEncodeDonatorData.append('city', formData.city);
+
+        console.log('Sending donator data:', urlEncodeDonatorData);
+
+        try {
+            await axios.post('http://localhost:8080/donators', urlEncodeDonatorData, {
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                }
+            });
+            console.log('Donator data sent to the backend successfully!');
+        } catch (error) {
+            console.error('Error sending donator data:', error);
+            await sock.sendMessage(userId, {
+                text: 'Maaf, terjadi kesalahan dalam menyimpan data donasi Anda. Coba lagi nanti.'
+            });
+        }
+
+        const urlEncodeDonationData = new URLSearchParams();
+        urlEncodeDonationData.append('phone', formData.phone);
+        urlEncodeDonationData.append('package', formData.package);
+        urlEncodeDonationData.append('amount', 0); // Set to 0 since the receipt must be received and approved by admin, then update the amount of transaction
+        urlEncodeDonationData.append('installment_options', formData.installmentType);
+        urlEncodeDonationData.append('status', 'pending'); // Set to pending since need approval from admin
+
+        try {
+            const donationData = await axios.post('http://localhost:8080/donations', urlEncodeDonationData, {
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                }
+            });
+
+            if (donationData.data.data.installment_option !== 'Sekali Bayar') {
+                const donationId = donationData.data.data._id;
+
+                const installementData = new URLSearchParams();
+                installementData.append('donation_id', donationId);
+
+                await axios.post('http://localhost:8080/installments', installementData, {
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    }
+                });
+                console.log('Installment data sent to the backend successfully!');
+            }
+        } catch (error) {
+            console.error('Error sending donation data:', error);
+            await sock.sendMessage(userId, {
+                text: 'Maaf, terjadi kesalahan dalam menyimpan data donasi Anda. Coba lagi nanti.'
+            });
+        }
 
         // Reset user state to main menu after form completion
         userState.currentMenu = 'mainMenu';
@@ -309,6 +387,7 @@ const handleFormFilling = async (sock, userId, input, userState) => {
 // Handle image input for transfer confirmation
 const handleImageInput = async (sock, userId, input, userState) => {
     // Handle image input here
+    const formData = userState.formData;
     if (input.message.imageMessage) {
         const imageBuffer = await downloadMediaMessage(
             input,
@@ -319,7 +398,7 @@ const handleImageInput = async (sock, userId, input, userState) => {
         console.log(imageBuffer);
         const image = cloudinary.uploader.upload_stream({
             resource_type: 'image',
-        }, async (error) => {
+        }, async (error, result) => {
             if (error) {
                 await sock.sendMessage(userId, {
                     text: 'Terjadi kesalahan saat mengunggah gambar. Silahkan coba lagi.'
@@ -328,12 +407,18 @@ const handleImageInput = async (sock, userId, input, userState) => {
                 return;
             } else {
                 await sock.sendMessage(userId, {
-                    text: `Terima kasih atas konfirmasi transfer. Bukti transfer anda: ${image.secure_url}`
+                    text: `Terima kasih atas konfirmasi transfer. Bukti transfer telah diterima.`
                 });
+                await sendMainMenu(sock, userId);
                 userState.currentMenu = 'mainMenu';
                 return;
             }
         }).end(imageBuffer);
+        let str = Readable.from(imageBuffer);
+        str.pipe(image);
+        console.log('str pipe', str);
+        console.log('image:', image);
+        console.log('result:', result.url);
     } else {
         await sock.sendMessage(userId, {
             text: 'Silahkan kirimkan gambar bukti transfer.'
@@ -344,12 +429,12 @@ const handleImageInput = async (sock, userId, input, userState) => {
 // Send the main menu to users
 const sendMainMenu = async (sock, userId) => {
     await sock.sendMessage(userId, {
-        text: 'Selamat datang di menu utama. Pilih opsi:\n1. Profil Pusbatara\n2. Update Progress Pusbatara Terkini\n3. Ingin Berdonasi\n4. Konfirmasi Transfer\n5. Cek Outstanding/Riwayat Cicilan\n6. Live Chat Admin'
+        text: '*Selamat datang di Sistem DONASI PUSBATARA*, Silahkan pilih menu:\n1. Profil Pusbatara\n2. Update Progress Pusbatara Terkini\n3. Ingin Berdonasi\n4. Konfirmasi Transfer\n5. Cek Outstanding/Riwayat Cicilan\n6. Live Chat Admin'
     });
 };
 
 // Start the socket connection
-// startSock();
+startSock();
 
 mongoose
     .connect(
@@ -364,3 +449,6 @@ mongoose
 
 app.use('/donators', donatorRoutes);
 app.use('/packages', packageRoutes);
+app.use('/transactions', transactionRoutes);
+app.use('/donations', donationRoutes);
+app.use('/installments', installmentRoutes);

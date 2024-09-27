@@ -8,18 +8,27 @@ const transactionSchema = new Schema({
         ref: 'Installment',
         default: null
     },
+    donator: {
+        type: Schema.Types.ObjectId,
+        ref: 'Donator',
+        required: true
+    },
     amount: {
-        type: Double,
+        type: Number,
         required: true
     },
     transaction_date: {
         type: Date,
-        required: true,
         default: Date.now
+    },
+    approval_date: {
+        type: Date,
+        default: null
     },
     transaction_status: {
         type: String,
-        required: true
+        required: true,
+        default: 'Waiting for approval'
     },
     transaction_receipt: {
         type: String,
@@ -27,7 +36,8 @@ const transactionSchema = new Schema({
     },
     payment_method: {
         type: String,
-        required: true
+        default: null
     },
+});
 
-})
+module.exports = mongoose.model('Transaction', transactionSchema);

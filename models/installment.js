@@ -9,15 +9,15 @@ const installmentSchema = new Schema({
         required: true
     },
     current_amount: {
-        type: Double,
-        required: true
+        type: Number,
+        default: 0
     },
     payment_date: {
         type: Date,
-        required: true
+        default: null
     },
     status: {
         type: String,
-        required: true,
+        default: 'on-going'
     },
 })

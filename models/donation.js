@@ -14,21 +14,21 @@ const donationSchema = new Schema({
         required: true
     },
     amount: {
-        type: Double,
+        type: Number,
         required: true
     },
     installment_options: {
-        type: Boolean,
+        type: String,
         required: true,
     },
     status: {
         type: String,
-        required: true,
         default: 'pending'
     },
     created_at: {
         type: Date,
-        required: true,
         default: Date.now
     },
 });
+
+module.exports = mongoose.model('Donation', donationSchema);
