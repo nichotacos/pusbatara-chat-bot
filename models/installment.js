@@ -20,4 +20,6 @@ const installmentSchema = new Schema({
         type: String,
         default: 'on-going'
     },
-})
+});
+
+module.exports = mongoose.model('Installment', installmentSchema);

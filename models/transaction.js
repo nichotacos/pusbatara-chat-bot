@@ -8,14 +8,14 @@ const transactionSchema = new Schema({
         ref: 'Installment',
         default: null
     },
-    donator: {
+    donation: {
         type: Schema.Types.ObjectId,
-        ref: 'Donator',
+        ref: 'Donation',
         required: true
     },
     amount: {
         type: Number,
-        required: true
+        default: 0
     },
     transaction_date: {
         type: Date,

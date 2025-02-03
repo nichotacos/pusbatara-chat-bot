@@ -217,11 +217,11 @@ const handleDonationMenu = async (sock, userId, input, userState) => {
             return;
     }
 
-    await sock.sendMessage(userId, {
-        text: `Anda memilih paket donasi ${selectedPackageName} ${selectedPackagePrice && `seharga ${selectedPackagePrice}`}.`
-    });
-
     if (input === '4') {
+        await sock.sendMessage(userId, {
+            text: `Anda memilih paket donasi ${selectedPackageName}.`
+        });
+
         await sock.sendMessage(userId, {
             text: 'Isilah data diri anda menggunakan format berikut. Dapat disalin saja dan isi sesuai kolom yang dibutuhkan. Pastikan data yang anda isi benar.'
         });
@@ -229,7 +229,15 @@ const handleDonationMenu = async (sock, userId, input, userState) => {
         await sock.sendMessage(userId, {
             text: 'Nama: \nProvinsi: \nKota: '
         });
+
+        // Redirecting to form filling
+        userState.currentMenu = 'fillForm';
+        userState.formData.package = selectedPackageName;
     } else {
+        await sock.sendMessage(userId, {
+            text: `Anda memilih paket donasi ${selectedPackageName} ${selectedPackagePrice && `seharga ${selectedPackagePrice}`}.`
+        });
+
         if (input === '3') {
             await sock.sendMessage(userId, {
                 text: 'Pilih tipe donasi yang anda inginkan:\n\n1. Sekali Bayar\n2. 10 Kali Cicilan'
@@ -239,11 +247,11 @@ const handleDonationMenu = async (sock, userId, input, userState) => {
                 text: 'Pilih tipe donasi yang anda inginkan:\n\n1. Sekali Bayar\n2. 5 Kali Cicilan'
             });
         }
-    }
 
-    // Redirecting to choose installment type
-    userState.currentMenu = 'chooseInstallment';
-    userState.formData.package = selectedPackageName;
+        // Redirecting to choose installment type
+        userState.currentMenu = 'chooseInstallment';
+        userState.formData.package = selectedPackageName;
+    }
 };
 
 const handleInstallmentType = async (sock, userId, input, userState) => {
@@ -342,7 +350,7 @@ const handleFormFilling = async (sock, userId, input, userState) => {
         urlEncodeDonationData.append('phone', formData.phone);
         urlEncodeDonationData.append('package', formData.package);
         urlEncodeDonationData.append('amount', 0); // Set to 0 since the receipt must be received and approved by admin, then update the amount of transaction
-        urlEncodeDonationData.append('installment_options', formData.installmentType);
+        formData.installmentType && urlEncodeDonationData.append('installment_options', formData.installmentType);// Add installment option if selected
         urlEncodeDonationData.append('status', 'pending'); // Set to pending since need approval from admin
 
         try {
@@ -352,13 +360,14 @@ const handleFormFilling = async (sock, userId, input, userState) => {
                 }
             });
 
-            if (donationData.data.data.installment_option !== 'Sekali Bayar') {
+            if (donationData.data.data.installment_options !== null) {
+                console.log('donasi bebas malah masuk sini kocak', donationData.data.data.installment_options)
                 const donationId = donationData.data.data._id;
 
-                const installementData = new URLSearchParams();
-                installementData.append('donation_id', donationId);
+                const installmentData = new URLSearchParams();
+                installmentData.append('donation_id', donationId);
 
-                await axios.post('http://localhost:8080/installments', installementData, {
+                await axios.post('http://localhost:8080/installments', installmentData, {
                     headers: {
                         'Content-Type': 'application/x-www-form-urlencoded'
                     }
@@ -398,6 +407,7 @@ const handleImageInput = async (sock, userId, input, userState) => {
         console.log(imageBuffer);
         const image = cloudinary.uploader.upload_stream({
             resource_type: 'image',
+            folder: 'pusbatara'
         }, async (error, result) => {
             if (error) {
                 await sock.sendMessage(userId, {
@@ -406,20 +416,38 @@ const handleImageInput = async (sock, userId, input, userState) => {
                 console.error(error);
                 return;
             } else {
-                await sock.sendMessage(userId, {
-                    text: `Terima kasih atas konfirmasi transfer. Bukti transfer telah diterima.`
-                });
-                await sendMainMenu(sock, userId);
-                userState.currentMenu = 'mainMenu';
-                return;
+                console.log('Image uploaded to cloudinary:', result.secure_url);
+
+                const latestDonationPerUser = await axios.get(`http://localhost:8080/donations/${userId.split('@')[0]}`);
+
+                const urlEncodeTransactionData = new URLSearchParams();
+                urlEncodeTransactionData.append('donation_id', latestDonationPerUser.data.data._id);
+                urlEncodeTransactionData.append('transaction_receipt', result.secure_url);
+
+                try {
+                    await axios.post('http://localhost:8080/transactions', urlEncodeTransactionData, {
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded'
+                        }
+                    });
+                    console.log('Transaction data sent to the backend successfully!');
+
+                    await sock.sendMessage(userId, {
+                        text: `Terima kasih atas konfirmasi transfer. Bukti transfer telah diterima.`
+                    });
+                    await sendMainMenu(sock, userId);
+                    userState.currentMenu = 'mainMenu';
+                } catch (error) {
+                    console.error('Error sending transaction data:', error);
+                    await sock.sendMessage(userId, {
+                        text: 'Maaf, terjadi kesalahan dalam mengirimkan data transfer Anda. Coba lagi nanti.'
+                    });
+                }
             }
         }).end(imageBuffer);
-        let str = Readable.from(imageBuffer);
-        str.pipe(image);
-        console.log('str pipe', str);
-        console.log('image:', image);
-        console.log('result:', result.url);
+        return;
     } else {
+        upStep(userState);
         await sock.sendMessage(userId, {
             text: 'Silahkan kirimkan gambar bukti transfer.'
         });

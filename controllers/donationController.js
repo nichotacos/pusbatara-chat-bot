@@ -41,3 +41,21 @@ exports.addDonations = async (req, res) => {
         return res.status(500).json({ message: 'Error adding donation', error: error.message });
     }
 };
+
+exports.getLastDonationByUser = async (req, res) => {
+    try {
+        const donator = await Donator.findOne({ phone: req.params.phone });
+
+        const lastDonation = await Donation.findOne({ donator: donator._id })
+            .sort({ created_at: -1 }) // Sort by creation date in descending order to get the latest
+            .populate('donator'); // Populate the donator details
+        if (!lastDonation) {
+            return res.status(404).json({ message: 'Last donation not found' });
+        }
+
+        return res.status(200).json({ message: 'Last donation found', data: lastDonation });
+    } catch (error) {
+        console.error('Error getting last donation:', error);
+        return res.status(500).json({ message: 'Error getting last donation', error: error.message });
+    }
+}

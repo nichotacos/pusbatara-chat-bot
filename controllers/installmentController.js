@@ -3,10 +3,25 @@ const Donation = require('../models/donation');
 
 exports.getInstallments = async (req, res) => {
     try {
-        const installments = await Installment.find().then((installment) => {
-            console.log(installment);
-            res.send(installment);
-        });
+        const installments = await Installment.find()
+            .populate({
+                path: 'donation',
+                model: 'Donation',
+                populate: [
+                    {
+                        path: 'donator',
+                        model: 'Donator'
+                    },
+                    {
+                        path: 'package',
+                        model: 'Package'
+                    }
+                ],
+            })
+            .then((installment) => {
+                console.log(installment);
+                res.send(installment);
+            });
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
